@@ -1,8 +1,7 @@
-// convex/users.ts
-
+// convex/users.ts - Clean user management without legacy code
 import { v } from 'convex/values'
 import { mutation, query } from './_generated/server'
-import type { User } from './schema'
+import { ensureEntityExists, ValidationError } from './utils/base'
 
 // Create or update user from auth sync
 export const createOrUpdateUser = mutation({
@@ -30,20 +29,18 @@ export const createOrUpdateUser = mutation({
       })
       return existingUser._id
     } else {
-      // Create new user with default karma and task values
+      // Create new user with default preferences
       const userId = await ctx.db.insert('users', {
         authUserId: args.authUserId,
         email: args.email,
         name: args.name,
         avatar: args.avatar,
-        karmaLevel: 0,
-        tasksCompleted: 0,
-        tasksAssigned: 0,
         preferences: {
           theme: 'light',
           notifications: true,
           language: 'en',
         },
+        createdBy: args.authUserId, // User creates themselves
         createdAt: now,
         updatedAt: now,
       })
@@ -60,6 +57,14 @@ export const getUserByAuthId = query({
       .query('users')
       .withIndex('authUserId', (q) => q.eq('authUserId', args.authUserId))
       .first()
+  },
+})
+
+// Get user by ID
+export const getById = query({
+  args: { id: v.id('users') },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.id)
   },
 })
 
@@ -80,7 +85,7 @@ export const updatePreferences = mutation({
       .first()
 
     if (!user) {
-      throw new Error('User not found')
+      throw new ValidationError('User not found')
     }
 
     await ctx.db.patch(user._id, {
@@ -90,6 +95,8 @@ export const updatePreferences = mutation({
       },
       updatedAt: Date.now(),
     })
+
+    return user._id
   },
 })
 
@@ -107,14 +114,15 @@ export const updateProfile = mutation({
       .first()
 
     if (!user) {
-      throw new Error('User not found')
+      throw new ValidationError('User not found')
     }
 
-    await ctx.db.patch(user._id, {
-      name: args.name,
-      avatar: args.avatar,
-      updatedAt: Date.now(),
-    })
+    const updateData: any = { updatedAt: Date.now() }
+    if (args.name !== undefined) updateData.name = args.name
+    if (args.avatar !== undefined) updateData.avatar = args.avatar
+
+    await ctx.db.patch(user._id, updateData)
+    return user._id
   },
 })
 
@@ -129,16 +137,38 @@ export const deleteUser = mutation({
 
     if (user) {
       await ctx.db.delete(user._id)
+      return true
+    }
+    return false
+  },
+})
+
+// Get all users (for admin features)
+export const list = query({
+  args: {
+    limit: v.optional(v.number()),
+    offset: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const limit = Math.min(args.limit || 50, 100)
+    const offset = args.offset || 0
+    
+    const users = await ctx.db
+      .query('users')
+      .order('desc')
+      .collect()
+    
+    return {
+      data: users.slice(offset, offset + limit),
+      hasMore: users.length > offset + limit,
+      total: users.length
     }
   },
 })
 
-// Update user karma level
-export const updateKarmaLevel = mutation({
-  args: {
-    authUserId: v.string(),
-    karmaLevel: v.number(),
-  },
+// Get user statistics
+export const getStats = query({
+  args: { authUserId: v.string() },
   handler: async (ctx, args) => {
     const user = await ctx.db
       .query('users')
@@ -146,76 +176,48 @@ export const updateKarmaLevel = mutation({
       .first()
 
     if (!user) {
-      throw new Error('User not found')
+      throw new ValidationError('User not found')
     }
 
-    await ctx.db.patch(user._id, {
-      karmaLevel: args.karmaLevel,
-      updatedAt: Date.now(),
-    })
-  },
-})
+    // Get user's projects
+    const projects = await ctx.db
+      .query('projects')
+      .filter(q => q.eq(q.field('createdBy'), args.authUserId))
+      .collect()
 
-// Update task completion count
-export const updateTasksCompleted = mutation({
-  args: {
-    authUserId: v.string(),
-    increment: v.optional(v.boolean()), // true to increment, false to set absolute value
-    count: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query('users')
-      .withIndex('authUserId', (q) => q.eq('authUserId', args.authUserId))
-      .first()
+    // Get user's agents
+    const agents = await ctx.db
+      .query('agents')
+      .filter(q => q.eq(q.field('createdBy'), args.authUserId))
+      .collect()
 
-    if (!user) {
-      throw new Error('User not found')
+    // Get user's executions
+    const executions = await ctx.db
+      .query('executions')
+      .filter(q => q.eq(q.field('createdBy'), args.authUserId))
+      .collect()
+
+    const completedExecutions = executions.filter(e => e.status === 'completed').length
+    const failedExecutions = executions.filter(e => e.status === 'failed').length
+
+    return {
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+        createdAt: user.createdAt
+      },
+      stats: {
+        projectsCount: projects.length,
+        agentsCount: agents.length,
+        executionsCount: executions.length,
+        completedExecutions,
+        failedExecutions,
+        successRate: executions.length > 0 
+          ? completedExecutions / executions.length 
+          : 0
+      }
     }
-
-    const newCount = args.increment 
-      ? user.tasksCompleted + 1
-      : args.count ?? user.tasksCompleted
-
-    await ctx.db.patch(user._id, {
-      tasksCompleted: newCount,
-      updatedAt: Date.now(),
-    })
-  },
-})
-
-// Update task assignment count
-export const updateTasksAssigned = mutation({
-  args: {
-    authUserId: v.string(),
-    increment: v.optional(v.boolean()), // true to increment, false to set absolute value
-    count: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const user = await ctx.db
-      .query('users')
-      .withIndex('authUserId', (q) => q.eq('authUserId', args.authUserId))
-      .first()
-
-    if (!user) {
-      throw new Error('User not found')
-    }
-
-    const newCount = args.increment 
-      ? user.tasksAssigned + 1
-      : args.count ?? user.tasksAssigned
-
-    await ctx.db.patch(user._id, {
-      tasksAssigned: newCount,
-      updatedAt: Date.now(),
-    })
-  },
-})
-
-// Get all users (for admin or collaboration features)
-export const getAllUsers = query({
-  args: {},
-  handler: async (ctx) => {
-    return await ctx.db.query('users').collect()
   },
 })

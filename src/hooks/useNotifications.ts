@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useConvexMutation, convexQuery } from '@convex-dev/react-query'
 import { api } from 'convex/_generated/api'
 import { useSession } from '~/lib/auth-client'
-import { Notification } from '~/types/exports'
+import { Notification } from '~/types/index'
 import toast from 'react-hot-toast'
 
 export function useNotifications() {

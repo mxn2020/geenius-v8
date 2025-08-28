@@ -1,67 +1,83 @@
+// src/components/Dashboard/StatsCards.tsx - Updated for new backend
+
 import React from 'react';
-import { CheckCircle, ClipboardList, BarChart3, Target } from 'lucide-react';
+import { Bot, Zap, Activity, Target } from 'lucide-react';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { convexQuery } from '@convex-dev/react-query';
-import { api } from 'convex/_generated/api';
 import { useSession } from '~/lib/auth-client';
-import type { Board } from 'convex/schema.js';
+import { userQueries, projectQueries, agentQueries, executionQueries } from '../../queries';
 
 export function StatsCards() {
   const { data: session } = useSession();
+  const authUserId = session?.user?.id || '';
   
-  // Get user data
-  const userQuery = useSuspenseQuery(
-    convexQuery(api.users.getUserByAuthId, {
-      authUserId: session?.user?.id || '',
-    })
+  // Get user stats with new API
+  const userStatsQuery = useSuspenseQuery(
+    userQueries.stats(authUserId)
   );
 
-  // Get user's boards
-  const boardsQuery = useSuspenseQuery(
-    convexQuery(api.board.getBoards, {})
+  // Get user's projects 
+  const projectsQuery = useSuspenseQuery(
+    projectQueries.userProjects(authUserId, 50)
   );
 
-  const user = userQuery.data;
-  const boards = boardsQuery.data || [];
-  
-  const userBoards = boards.filter((b) => b.createdBy === session?.user?.id);
-  
+  // Get user's agents
+  const agentsQuery = useSuspenseQuery(
+    agentQueries.list(undefined, authUserId, undefined, 50)
+  );
+
+  // Get recent executions
+  const executionsQuery = useSuspenseQuery(
+    executionQueries.list(undefined, undefined, authUserId, undefined, 50)
+  );
+
+  const userStats = userStatsQuery.data;
+  const projects = projectsQuery.data?.data || [];
+  const agents = agentsQuery.data?.data || [];
+  const executions = executionsQuery.data?.data || [];
+
+  const activeAgents = agents.filter(a => a.status === 'active').length;
+  const runningExecutions = executions.filter(e => e.status === 'running').length;
+  const completedExecutions = executions.filter(e => e.status === 'completed').length;
+  const successRate = executions.length > 0 
+    ? Math.round((completedExecutions / executions.length) * 100) 
+    : 0;
+
   const stats = [
     {
-      label: 'Tasks Completed',
-      value: user?.tasksCompleted || 0,
-      icon: CheckCircle,
-      color: 'text-green-600',
-      bgColor: 'bg-green-50',
-      change: '+5 this week',
-      changeColor: 'text-green-700',
-    },
-    {
-      label: 'Tasks Assigned',
-      value: user?.tasksAssigned || 0,
-      icon: ClipboardList,
+      label: 'Active Projects',
+      value: projects.filter(p => p.status === 'active').length,
+      icon: Target,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50',
-      change: '+3 this week',
+      change: `${projects.length} total`,
       changeColor: 'text-blue-700',
     },
     {
-      label: 'Active Boards',
-      value: userBoards.length,
-      icon: BarChart3,
-      color: 'text-indigo-600',
-      bgColor: 'bg-indigo-50',
-      change: '2 boards',
-      changeColor: 'text-indigo-700',
+      label: 'Active Agents',
+      value: activeAgents,
+      icon: Bot,
+      color: 'text-green-600',
+      bgColor: 'bg-green-50',
+      change: `${agents.length} total`,
+      changeColor: 'text-green-700',
     },
     {
-      label: 'Productivity Score',
-      value: user?.karmaLevel || 0,
-      icon: Target,
+      label: 'Running Executions',
+      value: runningExecutions,
+      icon: Zap,
       color: 'text-purple-600',
       bgColor: 'bg-purple-50',
-      change: '+12 this week',
+      change: `${executions.length} total`,
       changeColor: 'text-purple-700',
+    },
+    {
+      label: 'Success Rate',
+      value: `${successRate}%`,
+      icon: Activity,
+      color: 'text-indigo-600',
+      bgColor: 'bg-indigo-50',
+      change: `${completedExecutions} completed`,
+      changeColor: 'text-indigo-700',
     },
   ];
 

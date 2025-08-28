@@ -1,19 +1,18 @@
+// src/components/Dashboard/Dashboard.tsx - Updated for new backend
+
 import React from 'react';
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { convexQuery } from '@convex-dev/react-query';
-import { api } from 'convex/_generated/api';
 import { useSession } from '~/lib/auth-client';
 import { StatsCards } from './StatsCards';
 import { QuickActions } from './QuickActions';
+import { userQueries } from '../../queries';
 
 export function Dashboard() {
   const { data: session } = useSession();
 
-  // Get user data
+  // Get user data with new API
   const userQuery = useSuspenseQuery(
-    convexQuery(api.users.getUserByAuthId, {
-      authUserId: session?.user?.id || '',
-    })
+    userQueries.byAuthId(session?.user?.id || '')
   );
 
   const user = userQuery.data;
@@ -25,7 +24,7 @@ export function Dashboard() {
           Welcome back, {user?.name || session?.user?.name}
         </h1>
         <p className="text-lg text-gray-600">
-          Here's an overview of your task management progress
+          Here's an overview of your AI agent management progress
         </p>
       </div>
 

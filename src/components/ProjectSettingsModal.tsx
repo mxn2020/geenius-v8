@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { X, Save, AlertTriangle, Info, Trash2, Archive, RefreshCw } from 'lucide-react'
 import { z } from 'zod'
-import { Project, ProjectFormData } from '~/types/exports'
+import { Project, ProjectFormData } from '~/types/index'
 
 // Project settings schema
 const projectSettingsSchema = z.object({
@@ -109,7 +109,7 @@ export function ProjectSettingsModal({
       setFormData({
         name: project.name,
         description: project.description || '',
-        configuration: project.configuration as any,
+        configuration: project.configuration,
         resourceLimits: project.resourceLimits,
         notifications: project.metadata?.notifications || {
           enableEmailNotifications: true,
@@ -137,7 +137,7 @@ export function ProjectSettingsModal({
     } catch (error) {
       if (error instanceof z.ZodError) {
         const newErrors: Record<string, string> = {}
-        error.issues.forEach((err: any) => {
+        error.issues.forEach((err) => {
           if (err.path.length > 0) {
             newErrors[err.path.join('.')] = err.message
           }

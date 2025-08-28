@@ -4,7 +4,7 @@ import { useQuery, useMutation, useAction } from 'convex/react'
 import { api } from '../../convex/_generated/api'
 import { Id } from '../../convex/_generated/dataModel'
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { Project, Agent, Execution, SystemHealth } from '~/types/exports'
+import { Project, Agent, Execution, SystemHealth } from '~/types/index'
 
 // Mock data for development
 const mockProject: Project = {

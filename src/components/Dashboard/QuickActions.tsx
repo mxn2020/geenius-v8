@@ -1,22 +1,38 @@
+// src/components/Dashboard/QuickActions.tsx - Updated for new backend
+
 import React from 'react';
-import { Plus, Grid } from 'lucide-react';
+import { Plus, Bot, Play, Settings } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 
 export function QuickActions() {
   const actions = [
     {
-      label: 'Create Board',
+      label: 'Create Project',
       icon: Plus,
-      description: 'Start a new task management board',
+      description: 'Start a new AI agent project',
       color: 'bg-indigo-600 hover:bg-indigo-700',
-      to: '/boards',
+      to: '/projects/new',
     },
     {
-      label: 'View All Boards',
-      icon: Grid,
-      description: 'See all your task boards',
+      label: 'Create Agent',
+      icon: Bot,
+      description: 'Build a new AI agent',
+      color: 'bg-green-600 hover:bg-green-700',
+      to: '/agents/new',
+    },
+    {
+      label: 'Run Execution',
+      icon: Play,
+      description: 'Execute agent workflows',
+      color: 'bg-purple-600 hover:bg-purple-700',
+      to: '/executions/new',
+    },
+    {
+      label: 'View Projects',
+      icon: Settings,
+      description: 'Manage all projects',
       color: 'bg-gray-600 hover:bg-gray-700',
-      to: '/boards',
+      to: '/projects',
     },
   ];
 

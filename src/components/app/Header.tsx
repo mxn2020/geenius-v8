@@ -1,19 +1,19 @@
 import { useState } from 'react';
-import { User, Bell, Search, Plus, LogOut, BarChart3, Clipboard } from 'lucide-react';
+import { User, Bell, Search, Plus, LogOut, BarChart3, Bot, Zap, Briefcase } from 'lucide-react';
 import { Link, useLocation } from '@tanstack/react-router';
 import { useSession, signOut } from '~/lib/auth-client';
 import { NotificationsDropdown } from './NotificationsDropdown';
-import { useNotifications } from '~/hooks/useNotifications';
 
 export function Header() {
   const location = useLocation();
   const session = useSession();
-  const { unreadCount } = useNotifications();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
 
   const navigationItems = [
     { id: 'dashboard', path: '/dashboard', label: 'Dashboard', icon: BarChart3 },
-    { id: 'boards', path: '/boards', label: 'Boards', icon: Clipboard },
+    { id: 'projects', path: '/projects', label: 'Projects', icon: Briefcase },
+    { id: 'agents', path: '/agents', label: 'Agents', icon: Bot },
+    { id: 'executions', path: '/executions', label: 'Executions', icon: Zap },
   ];
 
   const handleLogout = async () => {
@@ -61,7 +61,7 @@ export function Header() {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
               <input
                 type="text"
-                placeholder="Search boards and tasks..."
+                placeholder="Search projects, agents, executions..."
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors placeholder-gray-400 text-gray-900"
               />
             </div>
@@ -69,18 +69,15 @@ export function Header() {
 
           {/* Right side actions */}
           <div className="flex items-center space-x-3">
-           <div className="relative">
+            <div className="relative">
               <button 
                 onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
                 className="p-2 text-gray-500 hover:text-gray-700 rounded-lg hover:bg-gray-100 transition-colors relative"
               >
-              <Bell className="h-5 w-5" />
-                {unreadCount > 0 && (
-                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
-                    <span className="text-xs font-medium text-white">{unreadCount}</span>
-                  </div>
-                )}
-            </button>
+                <Bell className="h-5 w-5" />
+                {/* Simplified notification badge without hook dependency */}
+                <div className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full hidden"></div>
+              </button>
               
               <NotificationsDropdown 
                 isOpen={isNotificationsOpen}
@@ -89,17 +86,19 @@ export function Header() {
             </div>
             
             <Link
-              to="/boards"
+              to="/projects/new"
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors font-medium"
             >
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">New Board</span>
+              <span className="hidden sm:inline">New Project</span>
             </Link>
             
             {session.data && (
               <div className="flex items-center space-x-3">
                 <div className="text-right hidden sm:block">
-                  <div className="text-sm font-medium text-gray-900">{session.data.user.name || session.data.user.email}</div>
+                  <div className="text-sm font-medium text-gray-900">
+                    {session.data.user.name || session.data.user.email}
+                  </div>
                   <div className="text-xs text-gray-500">Admin</div>
                 </div>
                 <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center">
@@ -140,7 +139,6 @@ export function Header() {
           })}
         </nav>
       </div>
-
     </header>
   );
 }

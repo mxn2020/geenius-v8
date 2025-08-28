@@ -2,14 +2,20 @@
 
 import { useState, useMemo } from 'react'
 import { Plus, Search, Filter, Archive, Settings, Trash2, Play, Pause, Users, Activity, DollarSign, Clock, Grid, List, ChevronDown, ChevronUp, SortAsc, SortDesc, X, Calendar, TrendingUp } from 'lucide-react'
-import { useRealtimeProjectList, useRealtimeSystemHealth } from '~/lib/realtime-subscriptions'
+import { useRealtimeSystemHealth } from '~/lib/realtime-subscriptions'
 import { ProjectCreationForm } from './ProjectCreationForm'
 import { ProjectSettingsModal } from './ProjectSettingsModal'
-import { Project, ProjectStatus, SortField, SortOrder, ViewMode, ProjectFormData } from '~/types/exports'
+import { Project, ProjectStatus, SortField, SortOrder, ViewMode, ProjectFormData } from '~/types/index'
+import { useCreateProjectMutation, useUpdateProjectMutation, useDeleteProjectMutation } from '~/queries'
+import { useSession } from '~/lib/auth-client'
+import type { Id } from '../../convex/_generated/dataModel'
 
-// Project interface is now imported from ~/types
+interface ProjectDashboardProps {
+  projects: Project[]
+  onCreateProject?: () => void
+}
 
-export function ProjectDashboard() {
+export function ProjectDashboard({ projects, onCreateProject }: ProjectDashboardProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<ProjectStatus>('all')
   const [sortBy, setSortBy] = useState<SortField>('updated')
@@ -25,9 +31,13 @@ export function ProjectDashboard() {
   const [costFilter, setCostFilter] = useState<'all' | 'low' | 'medium' | 'high'>('all')
   const [executionFilter, setExecutionFilter] = useState<'all' | 'none' | 'few' | 'many'>('all')
 
-  // Get real-time project data
-  const { projects, isLoading } = useRealtimeProjectList()
+  const { data: session } = useSession()
   const { health } = useRealtimeSystemHealth()
+
+  // Mutations
+  const createProjectMutation = useCreateProjectMutation()
+  const updateProjectMutation = useUpdateProjectMutation()
+  const deleteProjectMutation = useDeleteProjectMutation()
 
   // Filter and search projects
   const filteredProjects = useMemo(() => {
@@ -131,7 +141,7 @@ export function ProjectDashboard() {
   const summaryStats = useMemo(() => {
     if (!projects) return { total: 0, active: 0, paused: 0, completed: 0 }
 
-    return projects.reduce((acc: any, project: Project) => {
+    return projects.reduce((acc: Record<string, number>, project: Project) => {
       acc.total += 1
       acc[project.status] = (acc[project.status] || 0) + 1
       return acc
@@ -139,10 +149,14 @@ export function ProjectDashboard() {
   }, [projects])
 
   const handleOpenCreateModal = () => {
-    setShowCreateModal(true)
+    if (onCreateProject) {
+      onCreateProject()
+    } else {
+      setShowCreateModal(true)
+    }
   }
 
-  const handleProjectAction = (project: Project, action: string) => {
+  const handleProjectAction = async (project: Project, action: string) => {
     setSelectedProject(project)
     
     switch (action) {
@@ -150,31 +164,45 @@ export function ProjectDashboard() {
         setShowSettingsModal(true)
         break
       case 'pause':
-        // TODO: Implement pause project
-        console.log('Pause project:', project._id)
+        await updateProjectMutation.mutateAsync({
+          id: project._id as Id<'projects'>,
+          status: 'paused'
+        })
         break
       case 'resume':
-        // TODO: Implement resume project  
-        console.log('Resume project:', project._id)
+        await updateProjectMutation.mutateAsync({
+          id: project._id as Id<'projects'>,
+          status: 'active'
+        })
         break
       case 'archive':
-        // TODO: Implement archive project
-        console.log('Archive project:', project._id)
+        await updateProjectMutation.mutateAsync({
+          id: project._id as Id<'projects'>,
+          status: 'archived'
+        })
         break
       case 'delete':
-        // TODO: Implement delete project
-        console.log('Delete project:', project._id)
+        if (confirm('Are you sure you want to delete this project? This action cannot be undone.')) {
+          await deleteProjectMutation.mutateAsync({
+            id: project._id as Id<'projects'>
+          })
+        }
         break
     }
   }
 
   const handleCreateProject = async (projectData: ProjectFormData) => {
     try {
-      // TODO: Integrate with Convex backend
-      console.log('Creating project:', projectData)
-      
-      // For now, just log the data
-      // In the future: await createProject(projectData)
+      if (!session?.user?.id) {
+        throw new Error('User must be logged in to create projects')
+      }
+
+      await createProjectMutation.mutateAsync({
+        name: projectData.name,
+        description: projectData.description,
+        createdBy: session.user.id,
+        metadata: projectData.metadata,
+      })
       
       // Close modal
       setShowCreateModal(false)
@@ -186,11 +214,16 @@ export function ProjectDashboard() {
 
   const handleSaveProjectSettings = async (projectId: string, settings: ProjectFormData) => {
     try {
-      // TODO: Integrate with Convex backend
-      console.log('Updating project settings:', projectId, settings)
+      await updateProjectMutation.mutateAsync({
+        id: projectId as Id<'projects'>,
+        name: settings.name,
+        description: settings.description,
+        configuration: settings.configuration,
+        resourceLimits: settings.resourceLimits,
+        metadata: settings.metadata,
+      })
       
-      // For now, just log the data
-      // In the future: await updateProject(projectId, settings)
+      setShowSettingsModal(false)
     } catch (error) {
       console.error('Failed to update project:', error)
       throw error
@@ -199,11 +232,8 @@ export function ProjectDashboard() {
 
   const handleDeleteProject = async (projectId: string) => {
     try {
-      // TODO: Integrate with Convex backend
-      console.log('Deleting project:', projectId)
-      
-      // For now, just log the data
-      // In the future: await deleteProject(projectId)
+      await deleteProjectMutation.mutateAsync({ id: projectId as Id<'projects'> })
+      setShowSettingsModal(false)
     } catch (error) {
       console.error('Failed to delete project:', error)
       throw error
@@ -212,11 +242,11 @@ export function ProjectDashboard() {
 
   const handleArchiveProject = async (projectId: string) => {
     try {
-      // TODO: Integrate with Convex backend
-      console.log('Archiving project:', projectId)
-      
-      // For now, just log the data
-      // In the future: await archiveProject(projectId)
+      await updateProjectMutation.mutateAsync({
+        id: projectId as Id<'projects'>,
+        status: 'archived'
+      })
+      setShowSettingsModal(false)
     } catch (error) {
       console.error('Failed to archive project:', error)
       throw error
@@ -225,16 +255,16 @@ export function ProjectDashboard() {
 
   const handleStatusChange = async (projectId: string, status: Project['status']) => {
     try {
-      // TODO: Integrate with Convex backend
-      console.log('Changing project status:', projectId, status)
-      
-      // For now, just log the data
-      // In the future: await updateProjectStatus(projectId, status)
+      await updateProjectMutation.mutateAsync({
+        id: projectId as Id<'projects'>,
+        status
+      })
     } catch (error) {
-      console.error('Failed to change project status:', error)
+      console.error('Failed to update project status:', error)
       throw error
     }
   }
+
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -264,13 +294,7 @@ export function ProjectDashboard() {
     }
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    )
-  }
+  // Loading is handled by Suspense in the route component
 
   return (
     <div className="max-w-7xl mx-auto p-6">
@@ -395,8 +419,8 @@ export function ProjectDashboard() {
                 value={`${sortBy}_${sortOrder}`}
                 onChange={(e) => {
                   const [field, order] = e.target.value.split('_')
-                  setSortBy(field as any)
-                  setSortOrder(order as 'asc' | 'desc')
+                  setSortBy(field as SortField)
+                  setSortOrder(order as SortOrder)
                 }}
                 className="pl-3 pr-8 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
               >

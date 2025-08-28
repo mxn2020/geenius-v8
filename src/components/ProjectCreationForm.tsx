@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { X, Info, AlertCircle, CheckCircle } from 'lucide-react'
 import { z } from 'zod'
-import { ProjectFormData } from '~/types/exports'
+import { ProjectFormData } from '~/types/index'
 
 // Project creation schema
 const projectCreationSchema = z.object({

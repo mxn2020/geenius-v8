@@ -1,202 +1,145 @@
-// convex/agents.ts - Agent Configuration API
-
+// convex/agents.ts - Clean agent management API
 import { v } from 'convex/values'
 import { mutation, query } from './_generated/server'
-import { Id } from './_generated/dataModel'
+import { Id, Doc } from './_generated/dataModel'
+import {
+  ensureEntityExists,
+  ensureProjectAccess,
+  ensureAgentAccess,
+  validatePagination,
+  BusinessLogicError,
+  ValidationError,
+  PaginatedResponse,
+  CACHE_TTL,
+  withCache
+} from './utils/base'
+import { 
+  paginationArgs,
+  filterArgs,
+  statusSchemas,
+  roleSchema,
+  workflowPatternSchema,
+  modelConfigSchema,
+  memoryConfigSchema
+} from './utils/schemas'
 
 // Create a new agent
 export const create = mutation({
   args: {
     projectId: v.id('projects'),
+    authUserId: v.optional(v.string()),
     name: v.string(),
     description: v.optional(v.string()),
-    role: v.union(v.literal('planner'), v.literal('director'), v.literal('coordinator'), v.literal('expert'), v.literal('builder')),
+    role: roleSchema,
     protocol: v.string(),
-    workflowPattern: v.union(
-      v.literal('sequential'),
-      v.literal('routing'),
-      v.literal('parallel'),
-      v.literal('orchestrator-worker'),
-      v.literal('evaluator-optimizer'),
-      v.literal('multi-step-tool')
-    ),
-    modelConfig: v.object({
-      modelType: v.string(),
-      parameters: v.object({
-        temperature: v.number(),
-        topP: v.optional(v.number()),
-        maxTokens: v.number(),
-        presencePenalty: v.optional(v.number()),
-        frequencyPenalty: v.optional(v.number()),
-        systemPrompt: v.optional(v.string()),
-        stopSequences: v.optional(v.array(v.string()))
-      }),
-      tokenLimit: v.optional(v.number()),
-      costLimit: v.optional(v.number()),
-      rateLimiting: v.object({
-        requestsPerMinute: v.optional(v.number()),
-        tokensPerMinute: v.optional(v.number()),
-        concurrentRequests: v.number()
-      })
-    }),
-    memoryConfig: v.object({
-      contextWindow: v.number(),
-      memoryPersistence: v.boolean(),
-      memoryTypes: v.object({
-        shortTerm: v.object({
-          enabled: v.boolean(),
-          maxSize: v.number(),
-          retention: v.union(v.literal('session'), v.literal('task'), v.literal('permanent'))
-        }),
-        working: v.object({
-          enabled: v.boolean(),
-          maxSize: v.number(),
-          retention: v.union(v.literal('session'), v.literal('task'), v.literal('permanent'))
-        }),
-        episodic: v.object({
-          enabled: v.boolean(),
-          maxSize: v.number(),
-          retention: v.union(v.literal('session'), v.literal('task'), v.literal('permanent'))
-        }),
-        semantic: v.object({
-          enabled: v.boolean(),
-          maxSize: v.number(),
-          retention: v.union(v.literal('session'), v.literal('task'), v.literal('permanent'))
-        }),
-        procedural: v.object({
-          enabled: v.boolean(),
-          maxSize: v.number(),
-          retention: v.union(v.literal('session'), v.literal('task'), v.literal('permanent'))
-        })
-      }),
-      sharingProtocols: v.array(v.union(
-        v.literal('private'),
-        v.literal('team_shared'),
-        v.literal('hierarchical'),
-        v.literal('global_shared'),
-        v.literal('selective')
-      )),
-      contextInjection: v.object({
-        strategy: v.union(
-          v.literal('append'),
-          v.literal('prepend'),
-          v.literal('structured'),
-          v.literal('summarized'),
-          v.literal('relevant_only')
-        ),
-        maxContextSize: v.number(),
-        relevanceThreshold: v.number(),
-        compressionRatio: v.number()
-      }),
-      persistence: v.object({
-        enableVectorStorage: v.boolean(),
-        enableSemanticSearch: v.boolean(),
-        indexingStrategy: v.union(v.literal('immediate'), v.literal('batch'), v.literal('scheduled')),
-        retentionPolicy: v.object({
-          shortTerm: v.number(),
-          working: v.number(),
-          episodic: v.number(),
-          semantic: v.number(),
-          procedural: v.number()
-        })
-      })
-    }),
+    workflowPattern: workflowPatternSchema,
+    modelConfig: modelConfigSchema,
+    memoryConfig: memoryConfigSchema,
     capabilities: v.array(v.string()),
-    customCapabilities: v.optional(v.array(v.string())),
     metadata: v.optional(v.record(v.string(), v.any()))
   },
   handler: async (ctx, args) => {
-    // Verify project exists
-    const project = await ctx.db.get(args.projectId)
-    if (!project) {
-      throw new Error('Project not found')
-    }
+    const { authUserId, ...agentData } = args
+    
+    // Verify project access
+    await ensureProjectAccess(ctx, args.projectId, authUserId)
+    
+    const now = Date.now()
     
     const agentId = await ctx.db.insert('agents', {
-      projectId: args.projectId,
-      name: args.name,
-      description: args.description,
-      role: args.role,
-      protocol: args.protocol,
-      workflowPattern: args.workflowPattern,
+      ...agentData,
       status: 'created',
-      modelConfig: args.modelConfig,
-      memoryConfig: args.memoryConfig,
-      capabilities: args.capabilities || args.customCapabilities || [],
       performance: {
         totalExecutions: 0,
         successfulExecutions: 0,
         failedExecutions: 0,
         avgExecutionTime: 0,
         totalTokensUsed: 0,
-        totalCostIncurred: 0
+        totalCostIncurred: 0,
+        memoryPeak: 0,
+        executionTime: 0,
+        recentSuccessRate: 0,
+        recentAvgExecutionTime: 0
       },
-      createdBy: 'system', // TODO: Get from auth context
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      lastActiveAt: Date.now(),
-      metadata: args.metadata || {}
+      lastActiveAt: now,
+      createdBy: authUserId || 'system',
+      createdAt: now,
+      updatedAt: now,
+      metadata: agentData.metadata || {}
     })
     
     return agentId
   }
 })
 
-// Get all agents
+// Get all agents with filtering and pagination
 export const list = query({
   args: {
     projectId: v.optional(v.id('projects')),
-    status: v.optional(v.union(
-      v.literal('created'),
-      v.literal('configuring'),
-      v.literal('ready'),
-      v.literal('active'),
-      v.literal('paused'),
-      v.literal('error'),
-      v.literal('archived')
-    )),
-    role: v.optional(v.union(v.literal('planner'), v.literal('director'), v.literal('coordinator'), v.literal('expert'), v.literal('builder'))),
-    limit: v.optional(v.number())
+    authUserId: v.optional(v.string()),
+    ...paginationArgs,
+    filters: v.optional(v.object({
+      ...filterArgs,
+      status: v.optional(statusSchemas.agent),
+      role: v.optional(roleSchema),
+      workflowPattern: v.optional(workflowPatternSchema)
+    }))
   },
-  handler: async (ctx, args) => {
-    let agents
+  handler: async (ctx, args): Promise<PaginatedResponse<Doc<'agents'>>> => {
+    const { limit, offset } = validatePagination(args)
     
+    let results: Doc<'agents'>[]
+    
+    // Apply project filter with proper query initialization
     if (args.projectId) {
-      agents = await ctx.db
+      await ensureProjectAccess(ctx, args.projectId, args.authUserId)
+      results = await ctx.db
         .query('agents')
         .withIndex('by_project', q => q.eq('projectId', args.projectId!))
         .order('desc')
         .collect()
+    } else if (args.authUserId) {
+      // Show only user's agents if no specific project
+      results = await ctx.db
+        .query('agents')
+        .filter(q => q.eq(q.field('createdBy'), args.authUserId!))
+        .order('desc')
+        .collect()
     } else {
-      agents = await ctx.db
+      // Get all agents (admin view)
+      results = await ctx.db
         .query('agents')
         .order('desc')
         .collect()
     }
     
-    // Apply additional filters
-    if (args.status) {
-      agents = agents.filter(agent => agent.status === args.status)
+    // Apply additional filters in memory
+    if (args.filters) {
+      results = results.filter(agent => {
+        if (args.filters!.status && agent.status !== args.filters!.status) return false
+        if (args.filters!.role && agent.role !== args.filters!.role) return false
+        if (args.filters!.workflowPattern && agent.workflowPattern !== args.filters!.workflowPattern) return false
+        return true
+      })
     }
     
-    if (args.role) {
-      agents = agents.filter(agent => agent.role === args.role)
+    return {
+      data: results.slice(offset, offset + limit),
+      hasMore: results.length > offset + limit,
+      total: results.length
     }
-    
-    // Apply limit
-    if (args.limit) {
-      agents = agents.slice(0, args.limit)
-    }
-    
-    return agents
   }
 })
 
 // Get agent by ID
 export const getById = query({
-  args: { id: v.id('agents') },
+  args: { 
+    id: v.id('agents'),
+    authUserId: v.optional(v.string())
+  },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.id)
+    const { agent } = await ensureAgentAccess(ctx, args.id, args.authUserId)
+    return agent
   }
 })
 
@@ -204,65 +147,35 @@ export const getById = query({
 export const update = mutation({
   args: {
     id: v.id('agents'),
+    authUserId: v.optional(v.string()),
     name: v.optional(v.string()),
     description: v.optional(v.string()),
-    status: v.optional(v.union(
-      v.literal('created'),
-      v.literal('configuring'),
-      v.literal('ready'),
-      v.literal('active'),
-      v.literal('paused'),
-      v.literal('error'),
-      v.literal('archived')
-    )),
+    status: v.optional(statusSchemas.agent),
     protocol: v.optional(v.string()),
-    workflowPattern: v.optional(v.union(
-      v.literal('sequential'),
-      v.literal('routing'),
-      v.literal('parallel'),
-      v.literal('orchestrator-worker'),
-      v.literal('evaluator-optimizer'),
-      v.literal('multi-step-tool')
-    )),
-    modelConfig: v.optional(v.object({
-      modelType: v.optional(v.string()),
-      parameters: v.optional(v.object({
-        temperature: v.optional(v.number()),
-        topP: v.optional(v.number()),
-        maxTokens: v.optional(v.number()),
-        presencePenalty: v.optional(v.number()),
-        frequencyPenalty: v.optional(v.number()),
-        systemPrompt: v.optional(v.string()),
-        stopSequences: v.optional(v.array(v.string()))
-      })),
-      tokenLimit: v.optional(v.number()),
-      costLimit: v.optional(v.number()),
-      rateLimiting: v.optional(v.object({
-        requestsPerMinute: v.optional(v.number()),
-        tokensPerMinute: v.optional(v.number()),
-        concurrentRequests: v.optional(v.number())
-      }))
-    })),
+    workflowPattern: v.optional(workflowPatternSchema),
+    modelConfig: v.optional(modelConfigSchema),
+    memoryConfig: v.optional(memoryConfigSchema),
     capabilities: v.optional(v.array(v.string())),
-    customCapabilities: v.optional(v.array(v.string())),
     metadata: v.optional(v.record(v.string(), v.any()))
   },
   handler: async (ctx, args) => {
-    const { id, ...updates } = args
-    const agent = await ctx.db.get(id)
+    const { id, authUserId, ...updates } = args
+    const { agent } = await ensureAgentAccess(ctx, id, authUserId)
     
-    if (!agent) {
-      throw new Error('Agent not found')
-    }
+    const updateData: any = { updatedAt: Date.now() }
     
-    // Merge nested objects properly
-    const patchData: any = {
-      ...updates,
-      updatedAt: Date.now()
-    }
+    // Handle simple field updates
+    if (updates.name !== undefined) updateData.name = updates.name
+    if (updates.description !== undefined) updateData.description = updates.description
+    if (updates.status !== undefined) updateData.status = updates.status
+    if (updates.protocol !== undefined) updateData.protocol = updates.protocol
+    if (updates.workflowPattern !== undefined) updateData.workflowPattern = updates.workflowPattern
+    if (updates.capabilities !== undefined) updateData.capabilities = updates.capabilities
+    if (updates.metadata !== undefined) updateData.metadata = updates.metadata
     
+    // Handle nested object updates with proper merging
     if (updates.modelConfig) {
-      patchData.modelConfig = {
+      updateData.modelConfig = {
         ...agent.modelConfig,
         ...updates.modelConfig,
         parameters: {
@@ -276,38 +189,45 @@ export const update = mutation({
       }
     }
     
-    await ctx.db.patch(id, patchData)
+    if (updates.memoryConfig) {
+      updateData.memoryConfig = {
+        ...agent.memoryConfig,
+        ...updates.memoryConfig,
+        memoryTypes: {
+          ...agent.memoryConfig.memoryTypes,
+          ...updates.memoryConfig.memoryTypes
+        }
+      }
+    }
+    
+    await ctx.db.patch(id, updateData)
     return id
   }
 })
 
 // Delete agent
 export const remove = mutation({
-  args: { id: v.id('agents') },
+  args: { 
+    id: v.id('agents'),
+    authUserId: v.optional(v.string())
+  },
   handler: async (ctx, args) => {
-    const agent = await ctx.db.get(args.id)
-    if (!agent) {
-      throw new Error('Agent not found')
-    }
+    const { agent } = await ensureAgentAccess(ctx, args.id, args.authUserId)
     
-    // Check if agent is currently executing
+    // Check if agent is currently active
     if (agent.status === 'active') {
-      throw new Error('Cannot delete active agent')
+      throw new BusinessLogicError('Cannot delete active agent')
     }
     
-    // Check if agent has running executions
+    // Check for running executions
     const runningExecutions = await ctx.db
       .query('executions')
-      .filter(q => 
-        q.and(
-          q.eq(q.field('agentId'), args.id),
-          q.eq(q.field('status'), 'running')
-        )
-      )
+      .withIndex('by_agent', q => q.eq('agentId', args.id))
+      .filter(q => q.eq(q.field('status'), 'running'))
       .collect()
     
     if (runningExecutions.length > 0) {
-      throw new Error('Cannot delete agent with running executions')
+      throw new BusinessLogicError('Cannot delete agent with running executions')
     }
     
     await ctx.db.delete(args.id)
@@ -315,85 +235,83 @@ export const remove = mutation({
   }
 })
 
-// Get agent performance metrics
+// Get agent performance metrics with caching
 export const getPerformanceMetrics = query({
   args: {
     id: v.id('agents'),
-    timeRange: v.optional(v.number()) // Time range in milliseconds
+    authUserId: v.optional(v.string()),
+    timeRange: v.optional(v.number())
   },
   handler: async (ctx, args) => {
-    const agent = await ctx.db.get(args.id)
-    if (!agent) {
-      throw new Error('Agent not found')
-    }
+    const { agent } = await ensureAgentAccess(ctx, args.id, args.authUserId)
     
-    const timeThreshold = args.timeRange ? Date.now() - args.timeRange : 0
+    const cacheKey = `agent_metrics:${args.id}:${args.timeRange || 'all'}`
     
-    // Get executions
-    const executions = await ctx.db
-      .query('executions')
-      .filter(q => 
-        q.and(
-          q.eq(q.field('agentId'), args.id),
-          q.gte(q.field('createdAt'), timeThreshold)
-        )
-      )
-      .collect()
-    
-    // Get performance data
-    const performanceMetrics = await ctx.db
-      .query('performanceMetrics')
-      .filter(q => 
-        q.and(
-          q.eq(q.field('entityId'), args.id),
-          q.gte(q.field('timestamp'), timeThreshold)
-        )
-      )
-      .collect()
-    
-    // Get token usage
-    const tokenUsage = await ctx.db
-      .query('tokenUsage')
-      .filter(q => 
-        q.and(
-          q.eq(q.field('agentId'), args.id),
-          q.gte(q.field('timestamp'), timeThreshold)
-        )
-      )
-      .collect()
-    
-    // Calculate metrics
-    const totalExecutions = executions.length
-    const successfulExecutions = executions.filter(e => e.status === 'completed').length
-    const failedExecutions = executions.filter(e => e.status === 'failed').length
-    const avgExecutionTime = executions.length > 0 
-      ? executions
-          .filter(e => e.completedAt && e.startedAt)
-          .reduce((sum, e) => sum + (e.completedAt! - e.startedAt!), 0) / executions.length
-      : 0
-    
-    const totalTokensUsed = tokenUsage.reduce((sum, usage) => sum + usage.totalTokens, 0)
-    const totalCostIncurred = tokenUsage.reduce((sum, usage) => sum + (usage.cost || 0), 0)
-    
-    return {
-      agentId: args.id,
-      timeRange: args.timeRange,
-      totalExecutions,
-      successfulExecutions,
-      failedExecutions,
-      successRate: totalExecutions > 0 ? successfulExecutions / totalExecutions : 0,
-      avgExecutionTime,
-      totalTokensUsed,
-      totalCostIncurred,
-      costPerExecution: totalExecutions > 0 ? totalCostIncurred / totalExecutions : 0,
-      tokensPerExecution: totalExecutions > 0 ? totalTokensUsed / totalExecutions : 0,
-      performanceScore: agent.performance?.avgExecutionTime ? 
-        Math.max(0, 100 - (avgExecutionTime - agent.performance.avgExecutionTime) / 1000) : 85
-    }
+    return await withCache(cacheKey, CACHE_TTL.SHORT, async () => {
+      const timeThreshold = args.timeRange ? Date.now() - args.timeRange : 0
+      
+      // Get all related data in parallel
+      const [executions, performanceMetrics, tokenUsage] = await Promise.all([
+        ctx.db
+          .query('executions')
+          .withIndex('by_agent', q => q.eq('agentId', args.id))
+          .filter(q => q.gte(q.field('createdAt'), timeThreshold))
+          .collect(),
+        ctx.db
+          .query('performanceMetrics')
+          .withIndex('by_entity', q => 
+            q.eq('entityType', 'agent').eq('entityId', args.id)
+          )
+          .filter(q => q.gte(q.field('timestamp'), timeThreshold))
+          .collect(),
+        ctx.db
+          .query('tokenUsage')
+          .withIndex('by_agent', q => q.eq('agentId', args.id))
+          .filter(q => q.gte(q.field('timestamp'), timeThreshold))
+          .collect()
+      ])
+      
+      // Calculate metrics
+      const totalExecutions = executions.length
+      const successfulExecutions = executions.filter(e => e.status === 'completed').length
+      const failedExecutions = executions.filter(e => e.status === 'failed').length
+      const avgExecutionTime = executions.length > 0
+        ? executions
+            .filter(e => e.completedAt && e.startedAt)
+            .reduce((sum, e) => sum + (e.completedAt! - e.startedAt!), 0) / executions.length
+        : 0
+      
+      const totalTokensUsed = tokenUsage.reduce((sum, usage) => sum + usage.totalTokens, 0)
+      const totalCostIncurred = tokenUsage.reduce((sum, usage) => sum + (usage.cost || 0), 0)
+      
+      const avgLatency = performanceMetrics
+        .filter(m => m.metricType === 'execution_time')
+        .reduce((sum, m, _, arr) => sum + m.value / arr.length, 0)
+      
+      return {
+        agentId: args.id,
+        timeRange: args.timeRange,
+        totalExecutions,
+        successfulExecutions,
+        failedExecutions,
+        successRate: totalExecutions > 0 ? successfulExecutions / totalExecutions : 0,
+        avgExecutionTime,
+        totalTokensUsed,
+        totalCostIncurred,
+        costPerExecution: totalExecutions > 0 ? totalCostIncurred / totalExecutions : 0,
+        tokensPerExecution: totalExecutions > 0 ? totalTokensUsed / totalExecutions : 0,
+        avgLatency,
+        performanceScore: calculatePerformanceScore(agent, {
+          successRate: totalExecutions > 0 ? successfulExecutions / totalExecutions : 0,
+          avgExecutionTime,
+          avgLatency
+        })
+      }
+    })
   }
 })
 
-// Update agent performance
+// Update agent performance (internal use)
 export const updatePerformance = mutation({
   args: {
     id: v.id('agents'),
@@ -409,42 +327,47 @@ export const updatePerformance = mutation({
     }))
   },
   handler: async (ctx, args) => {
-    const agent = await ctx.db.get(args.id)
-    if (!agent) {
-      throw new Error('Agent not found')
-    }
+    const agent = await ensureEntityExists(ctx, 'agents', args.id, 'Agent')
     
-    const performance = agent.performance
     const updates: any = {
       updatedAt: Date.now(),
       lastActiveAt: Date.now()
     }
     
-    if (args.executionDelta) {
-      const newTotal = (agent.performance?.totalExecutions || 0) + args.executionDelta.total
-      const newSuccessful = (agent.performance?.successfulExecutions || 0) + args.executionDelta.successful
-      const newFailed = (agent.performance?.failedExecutions || 0) + args.executionDelta.failed
-      
-      // Calculate new average execution time
-      const currentTotalTime = (agent.performance?.avgExecutionTime || 0) * (agent.performance?.totalExecutions || 0)
-      const newTotalTime = currentTotalTime + (args.executionDelta.executionTime || 0)
-      const newAvgTime = newTotal > 0 ? newTotalTime / newTotal : 0
-      
-      updates.performance = {
-        ...performance,
-        totalExecutions: newTotal,
-        successfulExecutions: newSuccessful,
-        failedExecutions: newFailed,
-        avgExecutionTime: newAvgTime
+    if (args.executionDelta || args.resourceDelta) {
+      const currentPerf = agent.performance || {
+        totalExecutions: 0,
+        successfulExecutions: 0,
+        failedExecutions: 0,
+        avgExecutionTime: 0,
+        totalTokensUsed: 0,
+        totalCostIncurred: 0,
+        memoryPeak: 0,
+        executionTime: 0,
+        recentSuccessRate: 0,
+        recentAvgExecutionTime: 0
       }
-    }
-    
-    if (args.resourceDelta) {
-      if (!updates.performance) {
-        updates.performance = performance
+      
+      updates.performance = { ...currentPerf }
+      
+      if (args.executionDelta) {
+        const newTotal = currentPerf.totalExecutions + args.executionDelta.total
+        updates.performance.totalExecutions = newTotal
+        updates.performance.successfulExecutions += args.executionDelta.successful
+        updates.performance.failedExecutions += args.executionDelta.failed
+        
+        // Recalculate average execution time
+        if (newTotal > 0) {
+          const currentTotalTime = currentPerf.avgExecutionTime * currentPerf.totalExecutions
+          const newTotalTime = currentTotalTime + args.executionDelta.executionTime
+          updates.performance.avgExecutionTime = newTotalTime / newTotal
+        }
       }
-      updates.performance.totalTokensUsed += args.resourceDelta.tokens
-      updates.performance.totalCostIncurred += args.resourceDelta.cost
+      
+      if (args.resourceDelta) {
+        updates.performance.totalTokensUsed += args.resourceDelta.tokens
+        updates.performance.totalCostIncurred += args.resourceDelta.cost
+      }
     }
     
     await ctx.db.patch(args.id, updates)
@@ -454,15 +377,15 @@ export const updatePerformance = mutation({
 
 // Activate agent
 export const activate = mutation({
-  args: { id: v.id('agents') },
+  args: { 
+    id: v.id('agents'),
+    authUserId: v.optional(v.string())
+  },
   handler: async (ctx, args) => {
-    const agent = await ctx.db.get(args.id)
-    if (!agent) {
-      throw new Error('Agent not found')
-    }
+    const { agent } = await ensureAgentAccess(ctx, args.id, args.authUserId)
     
-    if (agent.status !== 'ready' && agent.status !== 'paused') {
-      throw new Error('Agent must be in ready or paused status to activate')
+    if (!['ready', 'paused'].includes(agent.status)) {
+      throw new BusinessLogicError('Agent must be in ready or paused status to activate')
     }
     
     await ctx.db.patch(args.id, {
@@ -477,15 +400,15 @@ export const activate = mutation({
 
 // Deactivate agent
 export const deactivate = mutation({
-  args: { id: v.id('agents') },
+  args: { 
+    id: v.id('agents'),
+    authUserId: v.optional(v.string())
+  },
   handler: async (ctx, args) => {
-    const agent = await ctx.db.get(args.id)
-    if (!agent) {
-      throw new Error('Agent not found')
-    }
+    const { agent } = await ensureAgentAccess(ctx, args.id, args.authUserId)
     
     if (agent.status !== 'active') {
-      throw new Error('Agent must be active to deactivate')
+      throw new BusinessLogicError('Agent must be active to deactivate')
     }
     
     await ctx.db.patch(args.id, {
@@ -499,30 +422,33 @@ export const deactivate = mutation({
 
 // Validate agent configuration
 export const validate = mutation({
-  args: { id: v.id('agents') },
+  args: { 
+    id: v.id('agents'),
+    authUserId: v.optional(v.string())
+  },
   handler: async (ctx, args) => {
-    const agent = await ctx.db.get(args.id)
-    if (!agent) {
-      throw new Error('Agent not found')
-    }
+    const { agent } = await ensureAgentAccess(ctx, args.id, args.authUserId)
     
     const issues = []
     
     // Validate model configuration
-    if (!agent.modelConfig.modelType) {
+    if (!agent.modelConfig?.modelType) {
       issues.push('Model type is required')
     }
     
-    if (agent.modelConfig.parameters.maxTokens <= 0) {
+    if (!agent.modelConfig?.parameters?.maxTokens || agent.modelConfig.parameters.maxTokens <= 0) {
       issues.push('Max tokens must be positive')
     }
     
-    if (agent.modelConfig.parameters.temperature < 0 || agent.modelConfig.parameters.temperature > 1) {
-      issues.push('Temperature must be between 0 and 1')
+    if (agent.modelConfig?.parameters?.temperature !== undefined) {
+      if (agent.modelConfig.parameters.temperature < 0 || agent.modelConfig.parameters.temperature > 1) {
+        issues.push('Temperature must be between 0 and 1')
+      }
     }
     
     // Validate memory configuration
-    const totalMemorySize = agent.memoryConfig?.contextWindow || 0
+    const totalMemorySize = Object.values(agent.memoryConfig?.memoryTypes || {})
+      .reduce((sum, type: any) => sum + (type.enabled ? type.maxSize : 0), 0)
     
     if (totalMemorySize > (agent.memoryConfig?.contextWindow || 4000) * 0.8) {
       issues.push('Total memory size exceeds 80% of context window')
@@ -559,23 +485,20 @@ export const clone = mutation({
   args: {
     id: v.id('agents'),
     name: v.string(),
-    projectId: v.optional(v.id('projects'))
+    projectId: v.optional(v.id('projects')),
+    authUserId: v.optional(v.string())
   },
   handler: async (ctx, args) => {
-    const sourceAgent = await ctx.db.get(args.id)
-    if (!sourceAgent) {
-      throw new Error('Source agent not found')
-    }
+    const { agent: sourceAgent } = await ensureAgentAccess(ctx, args.id, args.authUserId)
     
     const targetProjectId = args.projectId || sourceAgent.projectId
     
-    // Verify target project exists
-    const targetProject = await ctx.db.get(targetProjectId!)
-    if (!targetProject) {
-      throw new Error('Target project not found')
-    }
+    // Verify target project access
+    await ensureProjectAccess(ctx, targetProjectId, args.authUserId)
     
-    // Clone the agent
+    const now = Date.now()
+    
+    // Clone the agent with reset performance metrics
     const clonedAgentId = await ctx.db.insert('agents', {
       projectId: targetProjectId,
       name: args.name,
@@ -593,19 +516,97 @@ export const clone = mutation({
         failedExecutions: 0,
         avgExecutionTime: 0,
         totalTokensUsed: 0,
-        totalCostIncurred: 0
+        totalCostIncurred: 0,
+        memoryPeak: 0,
+        executionTime: 0,
+        recentSuccessRate: 0,
+        recentAvgExecutionTime: 0
       },
-      createdBy: sourceAgent.createdBy,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      lastActiveAt: Date.now(),
+      lastActiveAt: now,
+      createdBy: args.authUserId || sourceAgent.createdBy,
+      createdAt: now,
+      updatedAt: now,
       metadata: {
         ...(sourceAgent.metadata || {}),
         clonedFrom: args.id,
-        clonedAt: Date.now()
+        clonedAt: now
       }
     })
     
     return clonedAgentId
   }
 })
+
+// Get agents summary for project dashboard
+export const getProjectSummary = query({
+  args: { 
+    projectId: v.id('projects'),
+    authUserId: v.optional(v.string())
+  },
+  handler: async (ctx, args) => {
+    await ensureProjectAccess(ctx, args.projectId, args.authUserId)
+    
+    const cacheKey = `agent_summary:${args.projectId}`
+    
+    return await withCache(cacheKey, CACHE_TTL.SHORT, async () => {
+      const agents = await ctx.db
+        .query('agents')
+        .withIndex('by_project', q => q.eq('projectId', args.projectId))
+        .collect()
+      
+      // Calculate summary stats in memory (efficient)
+      const summary = agents.reduce((acc, agent) => {
+        acc.total++
+        acc.byStatus[agent.status] = (acc.byStatus[agent.status] || 0) + 1
+        acc.byRole[agent.role] = (acc.byRole[agent.role] || 0) + 1
+        acc.byPattern[agent.workflowPattern] = (acc.byPattern[agent.workflowPattern] || 0) + 1
+        acc.totalExecutions += agent.performance?.totalExecutions || 0
+        acc.totalTokens += agent.performance?.totalTokensUsed || 0
+        acc.totalCost += agent.performance?.totalCostIncurred || 0
+        
+        if (agent.lastActiveAt > acc.mostRecentActivity) {
+          acc.mostRecentActivity = agent.lastActiveAt
+        }
+        
+        return acc
+      }, {
+        total: 0,
+        byStatus: {} as Record<string, number>,
+        byRole: {} as Record<string, number>,
+        byPattern: {} as Record<string, number>,
+        totalExecutions: 0,
+        totalTokens: 0,
+        totalCost: 0,
+        mostRecentActivity: 0
+      })
+      
+      return {
+        projectId: args.projectId,
+        ...summary,
+        avgTokensPerAgent: summary.total > 0 ? summary.totalTokens / summary.total : 0,
+        avgCostPerAgent: summary.total > 0 ? summary.totalCost / summary.total : 0
+      }
+    })
+  }
+})
+
+// Helper function to calculate performance score
+function calculatePerformanceScore(
+  agent: Doc<'agents'>, 
+  metrics: { successRate: number; avgExecutionTime: number; avgLatency: number }
+): number {
+  const baseScore = 100
+  
+  // Penalize low success rate
+  const successPenalty = (1 - metrics.successRate) * 30
+  
+  // Penalize high execution time (compared to baseline)
+  const baselineTime = agent.performance?.avgExecutionTime || 10000 // 10s baseline
+  const timePenalty = Math.max(0, (metrics.avgExecutionTime - baselineTime) / 1000) * 2
+  
+  // Penalize high latency
+  const latencyPenalty = Math.max(0, (metrics.avgLatency - 1000) / 100) // Penalty after 1s
+  
+  const score = Math.max(0, baseScore - successPenalty - timePenalty - latencyPenalty)
+  return Math.round(score)
+}

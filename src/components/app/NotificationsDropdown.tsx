@@ -1,7 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { Bell, X, Heart, Users, Zap, Trophy } from 'lucide-react';
 import { useNotifications } from '~/hooks/useNotifications';
-import { Notification } from '~/types/exports';
+import { Notification } from '~/types/index';
 
 
 interface Props {

@@ -12,10 +12,10 @@ import { createServerRootRoute } from '@tanstack/react-start/server'
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as DashboardRouteImport } from './routes/dashboard'
-import { Route as BoardsRouteImport } from './routes/boards'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as BoardsIndexRouteImport } from './routes/boards.index'
-import { Route as BoardsBoardIdRouteImport } from './routes/boards.$boardId'
+import { Route as ProjectsIndexRouteImport } from './routes/projects/index'
+import { Route as ProjectsNewRouteImport } from './routes/projects/new'
+import { Route as ProjectsProjectIdRouteImport } from './routes/projects/$projectId'
 import { Route as AuthSignupRouteImport } from './routes/auth.signup'
 import { Route as AuthResetPasswordRouteImport } from './routes/auth.reset-password'
 import { Route as AuthLoginRouteImport } from './routes/auth.login'
@@ -29,25 +29,25 @@ const DashboardRoute = DashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BoardsRoute = BoardsRouteImport.update({
-  id: '/boards',
-  path: '/boards',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BoardsIndexRoute = BoardsIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => BoardsRoute,
+const ProjectsIndexRoute = ProjectsIndexRouteImport.update({
+  id: '/projects/',
+  path: '/projects/',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const BoardsBoardIdRoute = BoardsBoardIdRouteImport.update({
-  id: '/$boardId',
-  path: '/$boardId',
-  getParentRoute: () => BoardsRoute,
+const ProjectsNewRoute = ProjectsNewRouteImport.update({
+  id: '/projects/new',
+  path: '/projects/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProjectsProjectIdRoute = ProjectsProjectIdRouteImport.update({
+  id: '/projects/$projectId',
+  path: '/projects/$projectId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthSignupRoute = AuthSignupRouteImport.update({
   id: '/auth/signup',
@@ -77,14 +77,14 @@ const ApiAuthSplatServerRoute = ApiAuthSplatServerRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/boards': typeof BoardsRouteWithChildren
   '/dashboard': typeof DashboardRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/auth/signup': typeof AuthSignupRoute
-  '/boards/$boardId': typeof BoardsBoardIdRoute
-  '/boards/': typeof BoardsIndexRoute
+  '/projects/$projectId': typeof ProjectsProjectIdRoute
+  '/projects/new': typeof ProjectsNewRoute
+  '/projects': typeof ProjectsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -93,33 +93,34 @@ export interface FileRoutesByTo {
   '/auth/login': typeof AuthLoginRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/auth/signup': typeof AuthSignupRoute
-  '/boards/$boardId': typeof BoardsBoardIdRoute
-  '/boards': typeof BoardsIndexRoute
+  '/projects/$projectId': typeof ProjectsProjectIdRoute
+  '/projects/new': typeof ProjectsNewRoute
+  '/projects': typeof ProjectsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/boards': typeof BoardsRouteWithChildren
   '/dashboard': typeof DashboardRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
   '/auth/login': typeof AuthLoginRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/auth/signup': typeof AuthSignupRoute
-  '/boards/$boardId': typeof BoardsBoardIdRoute
-  '/boards/': typeof BoardsIndexRoute
+  '/projects/$projectId': typeof ProjectsProjectIdRoute
+  '/projects/new': typeof ProjectsNewRoute
+  '/projects/': typeof ProjectsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/boards'
     | '/dashboard'
     | '/auth/forgot-password'
     | '/auth/login'
     | '/auth/reset-password'
     | '/auth/signup'
-    | '/boards/$boardId'
-    | '/boards/'
+    | '/projects/$projectId'
+    | '/projects/new'
+    | '/projects'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -128,29 +129,32 @@ export interface FileRouteTypes {
     | '/auth/login'
     | '/auth/reset-password'
     | '/auth/signup'
-    | '/boards/$boardId'
-    | '/boards'
+    | '/projects/$projectId'
+    | '/projects/new'
+    | '/projects'
   id:
     | '__root__'
     | '/'
-    | '/boards'
     | '/dashboard'
     | '/auth/forgot-password'
     | '/auth/login'
     | '/auth/reset-password'
     | '/auth/signup'
-    | '/boards/$boardId'
-    | '/boards/'
+    | '/projects/$projectId'
+    | '/projects/new'
+    | '/projects/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  BoardsRoute: typeof BoardsRouteWithChildren
   DashboardRoute: typeof DashboardRoute
   AuthForgotPasswordRoute: typeof AuthForgotPasswordRoute
   AuthLoginRoute: typeof AuthLoginRoute
   AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   AuthSignupRoute: typeof AuthSignupRoute
+  ProjectsProjectIdRoute: typeof ProjectsProjectIdRoute
+  ProjectsNewRoute: typeof ProjectsNewRoute
+  ProjectsIndexRoute: typeof ProjectsIndexRoute
 }
 export interface FileServerRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatServerRoute
@@ -183,13 +187,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/boards': {
-      id: '/boards'
-      path: '/boards'
-      fullPath: '/boards'
-      preLoaderRoute: typeof BoardsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -197,19 +194,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/boards/': {
-      id: '/boards/'
-      path: '/'
-      fullPath: '/boards/'
-      preLoaderRoute: typeof BoardsIndexRouteImport
-      parentRoute: typeof BoardsRoute
+    '/projects/': {
+      id: '/projects/'
+      path: '/projects'
+      fullPath: '/projects'
+      preLoaderRoute: typeof ProjectsIndexRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/boards/$boardId': {
-      id: '/boards/$boardId'
-      path: '/$boardId'
-      fullPath: '/boards/$boardId'
-      preLoaderRoute: typeof BoardsBoardIdRouteImport
-      parentRoute: typeof BoardsRoute
+    '/projects/new': {
+      id: '/projects/new'
+      path: '/projects/new'
+      fullPath: '/projects/new'
+      preLoaderRoute: typeof ProjectsNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/projects/$projectId': {
+      id: '/projects/$projectId'
+      path: '/projects/$projectId'
+      fullPath: '/projects/$projectId'
+      preLoaderRoute: typeof ProjectsProjectIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/auth/signup': {
       id: '/auth/signup'
@@ -253,27 +257,16 @@ declare module '@tanstack/react-start/server' {
   }
 }
 
-interface BoardsRouteChildren {
-  BoardsBoardIdRoute: typeof BoardsBoardIdRoute
-  BoardsIndexRoute: typeof BoardsIndexRoute
-}
-
-const BoardsRouteChildren: BoardsRouteChildren = {
-  BoardsBoardIdRoute: BoardsBoardIdRoute,
-  BoardsIndexRoute: BoardsIndexRoute,
-}
-
-const BoardsRouteWithChildren =
-  BoardsRoute._addFileChildren(BoardsRouteChildren)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  BoardsRoute: BoardsRouteWithChildren,
   DashboardRoute: DashboardRoute,
   AuthForgotPasswordRoute: AuthForgotPasswordRoute,
   AuthLoginRoute: AuthLoginRoute,
   AuthResetPasswordRoute: AuthResetPasswordRoute,
   AuthSignupRoute: AuthSignupRoute,
+  ProjectsProjectIdRoute: ProjectsProjectIdRoute,
+  ProjectsNewRoute: ProjectsNewRoute,
+  ProjectsIndexRoute: ProjectsIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
