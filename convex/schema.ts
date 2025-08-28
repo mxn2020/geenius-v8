@@ -98,6 +98,11 @@ const schema = defineSchema({
       parameters: v.optional(v.any()),
       tokenLimit: v.optional(v.number()),
       costLimit: v.optional(v.number()),
+      rateLimiting: v.optional(v.object({
+        requestsPerMinute: v.optional(v.number()),
+        tokensPerMinute: v.optional(v.number()),
+        concurrentRequests: v.optional(v.number()),
+      })),
     }),
     memoryConfig: v.optional(v.object({
       contextWindow: v.optional(v.number()),

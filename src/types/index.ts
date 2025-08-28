@@ -82,9 +82,14 @@ export interface AgentMemoryConfig {
 
 export interface ModelConfig {
   modelType: string
-  parameters?: any
+  parameters?: Record<string, any>
   tokenLimit?: number
   costLimit?: number
+  rateLimiting?: {
+    requestsPerMinute?: number
+    tokensPerMinute?: number
+    concurrentRequests?: number
+  }
 }
 
 export interface RateLimitConfig {

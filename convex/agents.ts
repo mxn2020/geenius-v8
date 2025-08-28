@@ -122,8 +122,7 @@ export const create = mutation({
       status: 'created',
       modelConfig: args.modelConfig,
       memoryConfig: args.memoryConfig,
-      capabilities: args.capabilities,
-      capabilities: args.customCapabilities || [],
+      capabilities: args.capabilities || args.customCapabilities || [],
       performance: {
         totalExecutions: 0,
         successfulExecutions: 0,
@@ -132,6 +131,7 @@ export const create = mutation({
         totalTokensUsed: 0,
         totalCostIncurred: 0
       },
+      createdBy: 'system', // TODO: Get from auth context
       createdAt: Date.now(),
       updatedAt: Date.now(),
       lastActiveAt: Date.now(),
@@ -159,27 +159,36 @@ export const list = query({
     limit: v.optional(v.number())
   },
   handler: async (ctx, args) => {
-    let query = ctx.db.query('agents')
+    let agents
     
     if (args.projectId) {
-      query = query.withIndex('by_project', q => q.eq('projectId', args.projectId!))
+      agents = await ctx.db
+        .query('agents')
+        .withIndex('by_project', q => q.eq('projectId', args.projectId!))
+        .order('desc')
+        .collect()
+    } else {
+      agents = await ctx.db
+        .query('agents')
+        .order('desc')
+        .collect()
     }
     
+    // Apply additional filters
     if (args.status) {
-      query = query.filter(q => q.eq(q.field('status'), args.status))
+      agents = agents.filter(agent => agent.status === args.status)
     }
     
     if (args.role) {
-      query = query.filter(q => q.eq(q.field('role'), args.role))
+      agents = agents.filter(agent => agent.role === args.role)
     }
     
-    query = query.order('desc')
-    
+    // Apply limit
     if (args.limit) {
-      query = query.take(args.limit)
+      agents = agents.slice(0, args.limit)
     }
     
-    return await query.collect()
+    return agents
   }
 })
 
@@ -336,7 +345,7 @@ export const getPerformanceMetrics = query({
       .query('performanceMetrics')
       .filter(q => 
         q.and(
-          q.eq(q.field('agentId'), args.id),
+          q.eq(q.field('entityId'), args.id),
           q.gte(q.field('timestamp'), timeThreshold)
         )
       )
@@ -360,11 +369,11 @@ export const getPerformanceMetrics = query({
     const avgExecutionTime = executions.length > 0 
       ? executions
           .filter(e => e.completedAt && e.startedAt)
-          .reduce((sum, e) => sum + (e.completedAt! - e.startedAt), 0) / executions.length
+          .reduce((sum, e) => sum + (e.completedAt! - e.startedAt!), 0) / executions.length
       : 0
     
-    const totalTokensUsed = tokenUsage.reduce((sum, usage) => sum + usage.tokens.total, 0)
-    const totalCostIncurred = tokenUsage.reduce((sum, usage) => sum + usage.costs.total, 0)
+    const totalTokensUsed = tokenUsage.reduce((sum, usage) => sum + usage.totalTokens, 0)
+    const totalCostIncurred = tokenUsage.reduce((sum, usage) => sum + (usage.cost || 0), 0)
     
     return {
       agentId: args.id,
