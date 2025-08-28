@@ -1,7 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { Bell, X, Heart, Users, Zap, Trophy } from 'lucide-react';
 import { useNotifications } from '~/hooks/useNotifications';
-import { Notification } from '~/types';
+import { Notification } from '~/types/exports';
 
 
 interface Props {
@@ -161,7 +161,7 @@ export function NotificationsDropdown({ isOpen, onClose }: Props) {
                           <span className={`text-xs ${
                             !notification.isRead ? 'text-gray-500' : 'text-gray-400'
                           }`}>
-                            {getTimeAgo(notification.createdAt)}
+                            {getTimeAgo(new Date(notification.createdAt))}
                           </span>
                           {!notification.isRead && (
                             <div className="w-2 h-2 bg-indigo-600 rounded-full"></div>

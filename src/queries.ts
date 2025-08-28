@@ -61,7 +61,7 @@ export function useUpdateCardMutation() {
   ).withOptimisticUpdate((localStore, args) => {
     const board = localStore.getQuery(api.board.getBoard, { id: args.boardId })
     if (!board) return
-    const items = board.items.map((item) => (item.id === args.id ? args : item))
+    const items = board.items.map((item: any) => (item.id === args.id ? args : item))
     localStore.setQuery(
       api.board.getBoard,
       { id: board.id },
@@ -78,7 +78,7 @@ export function useDeleteCardMutation() {
   ).withOptimisticUpdate((localStore, args) => {
     const board = localStore.getQuery(api.board.getBoard, { id: args.boardId })
     if (!board) return
-    const items = board.items.filter((item) => item.id !== args.id)
+    const items = board.items.filter((item: any) => item.id !== args.id)
     localStore.setQuery(
       api.board.getBoard,
       { id: board.id },
@@ -95,8 +95,8 @@ export function useDeleteColumnMutation() {
   ).withOptimisticUpdate((localStore, args) => {
     const board = localStore.getQuery(api.board.getBoard, { id: args.boardId })
     if (!board) return
-    const columns = board.columns.filter((col) => col.id !== args.id)
-    const items = board.items.filter((item) => item.columnId !== args.id)
+    const columns = board.columns.filter((col: any) => col.id !== args.id)
+    const items = board.items.filter((item: any) => item.columnId !== args.id)
     localStore.setQuery(
       api.board.getBoard,
       { id: board.id },
@@ -118,7 +118,7 @@ export function useUpdateColumnMutation() {
   ).withOptimisticUpdate((localStore, args) => {
     const board = localStore.getQuery(api.board.getBoard, { id: args.boardId })
     if (!board) return
-    const columns = board.columns.map((col) =>
+    const columns = board.columns.map((col: any) =>
       col.id === args.id ? { ...col, ...args } : col,
     )
     localStore.setQuery(

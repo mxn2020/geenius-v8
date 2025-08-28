@@ -8,7 +8,7 @@ import { api } from '../../convex/_generated/api.js'
 import { useUpdateBoardMutation } from '../queries.js'
 import { NewColumn } from './NewColumn.js'
 import { Column as ColumnComponent } from './Column.js'
-import type { Column } from 'convex/schema.js'
+import type { Column, Item } from 'convex/schema.js'
 import { EditableText } from '~/components/EditableText.js'
 
 export function Board({ boardId }: { boardId: string }) {

@@ -2,7 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useConvexMutation, convexQuery } from '@convex-dev/react-query'
 import { api } from 'convex/_generated/api'
 import { useSession } from '~/lib/auth-client'
-import { Notification } from '~/types'
+import { Notification } from '~/types/exports'
 import toast from 'react-hot-toast'
 
 export function useNotifications() {
@@ -67,7 +67,7 @@ export function useNotifications() {
   })
 
   // Transform Convex data to match our types
-  const notifications: Notification[] = (notificationsQuery.data || []).map(notification => ({
+  const notifications: Notification[] = (notificationsQuery.data || []).map((notification: any) => ({
     ...notification,
     createdAt: new Date(notification.createdAt),
     updatedAt: new Date(notification.updatedAt),

@@ -4,6 +4,7 @@ import { useSuspenseQuery } from '@tanstack/react-query';
 import { convexQuery } from '@convex-dev/react-query';
 import { api } from 'convex/_generated/api';
 import { useSession } from '~/lib/auth-client';
+import type { Board } from 'convex/schema.js';
 
 export function StatsCards() {
   const { data: session } = useSession();
@@ -23,7 +24,7 @@ export function StatsCards() {
   const user = userQuery.data;
   const boards = boardsQuery.data || [];
   
-  const userBoards = boards.filter(b => b.createdBy === session?.user?.id);
+  const userBoards = boards.filter((b) => b.createdBy === session?.user?.id);
   
   const stats = [
     {

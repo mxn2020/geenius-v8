@@ -69,7 +69,7 @@ function BoardsPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {boardsQuery.data.map((board) => (
+            {boardsQuery.data.map((board: any) => (
               <Link
                 key={board.id}
                 to="/boards/$boardId"
